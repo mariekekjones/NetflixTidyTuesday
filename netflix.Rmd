@@ -1,0 +1,195 @@
+---
+title: "Netflix TidyTuesday"
+author: "Marieke Jones"
+date: "4/20/2021"
+output: html_document:
+    keep_md: yes
+---
+
+# Load library and dataset
+
+```{r}
+library(tidyverse)
+library(lubridate)
+netflix_titles <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-04-20/netflix_titles.csv')
+```
+
+Clean up the date
+```{r}
+head(netflix_titles$date_added)
+
+netflix_titles <- netflix_titles %>%
+  mutate(date_added = parse_date(date_added, format = "%B %d, %Y"))
+```
+
+Create a basic plot showing the number of TV shows and Movies added over time
+
+```{r}
+netflix_titles %>%
+  group_by(year = year(date_added)) %>%
+  count(type) %>%
+  ggplot(aes(year, n)) + geom_line(aes(group = type, color = type))
+
+# see this by month instead
+netflix_titles %>%
+  mutate(monthyear = floor_date(date_added, "month")) %>% 
+  group_by(monthyear) %>%
+  count(type) %>%
+  ggplot(aes(monthyear, n)) + geom_line(aes(group = type, color = type))
+```
+
+Is the number of international titles increasing?
+
+```{r}
+netflix_titles %>% count(country) %>% filter(str_detect(country, "United States"))
+
+netflix_titles %>% count(country) %>% filter(country == "United States")
+
+# if it has any other country I'll call it an international film
+netflix_titles %>% 
+  mutate(international = if_else(country == "United States", "US", "international")) %>% count(international)
+         
+# make the plot
+netflix_titles %>% 
+  mutate(international = if_else(country == "United States", "US Only", "International"),
+         monthyear = floor_date(date_added, "month")) %>%
+  filter(monthyear > "2015-01-01") %>%
+  drop_na(international) %>%
+  group_by(monthyear) %>%
+  count(type, international) %>%
+  ggplot(aes(monthyear, n)) + 
+  geom_line(aes(group = international, color = international)) + 
+  facet_wrap(~type) +
+  labs(x = "Date Added to Netflix", y = "Count")
+```
+
+Play with the duration
+
+```{r}
+netflix_titles %>%
+  separate(duration, into = c("duration_number", "duration_units"), sep = " ") %>%
+  mutate(duration_number = as.numeric(duration_number)) %>%
+  filter(duration_units == "min") %>%
+  count(type)
+# all items with duration units of min are all movies
+```
+
+See the longest movies (that I never want to watch)
+
+```{r}
+netflix_titles %>%
+  separate(duration, into = c("duration_number", "duration_units"), sep = " ") %>%
+  mutate(duration_number = as.numeric(duration_number)) %>%
+  filter(duration_units == "min") %>%
+  arrange(-duration_number) %>%
+  select(title, listed_in, duration_number)
+```
+
+See the shortest movies - are they all kids movies?
+
+```{r}
+netflix_titles %>%
+  separate(duration, into = c("duration_number", "duration_units"), sep = " ") %>%
+  mutate(duration_number = as.numeric(duration_number)) %>%
+  filter(duration_units == "min") %>%
+  arrange(duration_number) %>%
+  count(title, listed_in, duration_number)
+
+# count the kids movies
+netflix_titles %>%
+  separate(duration, into = c("duration_number", "duration_units"), sep = " ") %>%
+  mutate(duration_number = as.numeric(duration_number)) %>%
+  filter(duration_units == "min") %>%
+  arrange(duration_number) %>%
+  head(200) %>%
+  count(listed_in) %>%
+  arrange(-n)
+
+# make a plot
+netflix_titles %>%
+  separate(duration, into = c("duration_number", "duration_units"), sep = " ") %>%
+  mutate(duration_number = as.numeric(duration_number)) %>%
+  filter(duration_units == "min") %>%
+  arrange(duration_number) %>%
+  head(200) %>%
+  count(listed_in) %>%
+  arrange(-n) %>%
+  head(20) %>%
+  mutate(listed_in = as_factor(listed_in)) %>%
+  ggplot(aes(n, listed_in)) + geom_col()
+
+# if the movie is ever listed in Children's turn it red
+netflix_titles %>%
+  separate(duration, into = c("duration_number", "duration_units"), sep = " ") %>%
+  mutate(duration_number = as.numeric(duration_number)) %>%
+  filter(duration_units == "min") %>%
+  arrange(duration_number) %>%
+  head(200) %>%
+  count(listed_in) %>%
+  arrange(-n) %>%
+  head(20) %>%
+  mutate(listed_in = as_factor(listed_in)) %>%
+  mutate(red = case_when(str_detect(listed_in, "Children") ~ "red",
+                         TRUE ~ "black")) %>%
+  ggplot(aes(n, listed_in)) + geom_col(aes(fill = red)) +
+  scale_fill_manual(values = c("darkgrey", "salmon")) +
+  theme(legend.position = "none") +
+  labs(x = "Count", y = "", title = "20 Shortest Movies on Netflix")
+```
+
+Are children's movies decreasing in duration over time?
+
+Clean up the listed_in to create some cleaner genres
+
+```{r}
+netflix_titles %>% 
+  filter(type == "Movie") %>%
+  count(listed_in) %>% 
+  arrange(-n)
+
+top6genre <- netflix_titles %>%
+  separate(duration, into = c("duration_number", "duration_units"), sep = " ") %>%
+  mutate(duration_number = as.numeric(duration_number)) %>%
+  filter(duration_units == "min") %>%
+  mutate(genre = case_when(
+    str_detect(listed_in, "Children") ~ "Children & Family",
+    str_detect(listed_in, "Comed") ~ "Comedy",
+    str_detect(listed_in, "Drama") ~ "Drama",
+    str_detect(listed_in, "Roman") ~ "Romance",
+    str_detect(listed_in, "Action") ~ "Action & Adventure",
+    str_detect(listed_in, "Documentar") ~ "Documentary",
+    str_detect(listed_in, "Horror") | 
+      str_detect(listed_in, "Thrill") ~ "Horror & Thriller",
+                         TRUE ~ listed_in)) %>%
+  count(genre) %>%
+  arrange(-n) %>%
+  head(6)
+```
+
+Make the plot
+```{r}
+theme_set(theme_minimal() + theme(legend.position = 'blank'))
+
+netflix_titles %>%
+  filter(release_year >= 1980) %>%
+  separate(duration, into = c("duration_number", "duration_units"), sep = " ") %>%
+  mutate(duration_number = as.numeric(duration_number)) %>%
+  filter(duration_units == "min") %>%
+  mutate(genre = case_when(
+    str_detect(listed_in, "Children") ~ "Children & Family",
+    str_detect(listed_in, "Comed") ~ "Comedy",
+    str_detect(listed_in, "Drama") ~ "Drama",
+    str_detect(listed_in, "Roman") ~ "Romance",
+    str_detect(listed_in, "Action") ~ "Action & Adventure",
+    str_detect(listed_in, "Documentar") ~ "Documentary",
+    str_detect(listed_in, "Horror") | str_detect(listed_in, "Thrill") ~ "Horror & Thriller",
+                         TRUE ~ listed_in)) %>%
+  filter(genre %in% top6genre$genre) %>%
+  group_by(genre, release_year) %>%
+  summarize(Duration = mean(duration_number)) %>%
+  ggplot(aes(release_year, Duration)) + 
+  geom_line(aes(group = genre, color = genre)) +
+  facet_wrap(~genre) +
+  labs(x = "", y = "Average Movie Duration (min)", title = "Children's movies and Dramas decrease in duration over time")
+```
+
