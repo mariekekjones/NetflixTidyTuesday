@@ -2,16 +2,25 @@
 title: "Netflix TidyTuesday"
 author: "Marieke Jones"
 date: "4/20/2021"
-output: html_document:
+output: 
+  html_document:
     keep_md: yes
 ---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
 
 # Load library and dataset
 
 ```{r}
 library(tidyverse)
 library(lubridate)
+
 netflix_titles <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-04-20/netflix_titles.csv')
+netflix_titles
 ```
 
 Clean up the date
